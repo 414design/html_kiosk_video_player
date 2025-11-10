@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Kiosk Video Player with Startimage</title>
+        <style>
+            :root {
+                --bg: #000;
+                --accent: #42cf73;
+                --muted: #8b8b8b;
+            }
+            html,
+            body {
+                height: 100%;
+                margin: 0;
+                overflow: hidden;
+                background: var(--bg);
+                color: #e5e7eb;
+                font-family:
+                    ui-sans-serif,
+                    system-ui,
+                    -apple-system,
+                    Segoe UI,
+                    Roboto,
+                    Ubuntu,
+                    Cantarell,
+                    Noto Sans,
+                    Helvetica,
+                    Arial,
+                    "Apple Color Emoji",
+                    "Segoe UI Emoji";
+            }
+            #stage {
+                position: fixed;
+                inset: 0;
+                overflow: hidden;
+            }
+            #image,
+            #video {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                top: 0;
+                left: 0;
+                transition: none;
+            }
+            #image {
+                display: block;
+            }
+            #video {
+                display: none;
+                filter: brightness(99%); /* Consistently darken the video */
+            }
+            #unmute-overlay {
+                position: absolute;
+                bottom: 30px;
+                left: 30px;
+                background: rgba(17, 17, 17, 0.6);
+                color: #e5e7eb;
+                padding: 18px 36px;
+                font-size: 20px;
+                font-family: Arial, sans-serif;
+                border-radius: 12px;
+                cursor: pointer;
+                z-index: 10;
+                display: none;
+                transition: opacity 0.3s ease;
+                backdrop-filter: blur(6px);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            .toolbar {
+                position: fixed;
+                top: 12px;
+                left: 50%;
+                transform: translateX(-50%);
+                display: none;
+                gap: 12px;
+                align-items: center;
+                flex-wrap: wrap;
+                background: rgba(17, 17, 17, 0.6);
+                backdrop-filter: blur(6px);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 16px;
+                padding: 10px 12px;
+                z-index: 20;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+            }
+            .pill {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 10px;
+                border-radius: 12px;
+                border: 1px dashed rgba(255, 255, 255, 0.14);
+                background: rgba(255, 255, 255, 0.02);
+                height: auto;
+                box-sizing: border-box;
+            }
+            button#toggleModeBtn,
+            button {
+                background: transparent;
+                border: none;
+                color: #e5e7eb;
+                font-size: 14px;
+                cursor: pointer;
+                padding: 0;
+                margin: 0;
+            }
+            .hint {
+                position: absolute;
+                left: 50%;
+                bottom: 16px;
+                transform: translateX(-50%);
+                color: #cfcfcf;
+                font-size: 13px;
+                text-align: center;
+                padding: 8px 12px;
+                border-radius: 10px;
+                background: rgba(0, 0, 0, 0.45);
+                backdrop-filter: blur(6px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                z-index: 25;
+                white-space: nowrap;
+                display: none;
+            }
+            .pill select,
+            .pill label {
+                color: #e5e7eb;
+                font-size: 14px;
+            }
+            .pill select {
+                background: transparent;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 8px;
+                padding: 4px 6px;
+            }
+            #drop-zone {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 80%;
+                height: 60%;
+                border: 2px dashed var(--accent);
+                border-radius: 12px;
+                background: rgba(0, 0, 0, 0.3);
+                display: none;
+                justify-content: center;
+                align-items: center;
+                color: var(--muted);
+                font-size: 18px;
+                z-index: 30;
+                pointer-events: all;
+                cursor: pointer;
+                text-align: center;
+            }
+            #drop-zone.highlight {
+                border-color: white;
+                background: rgba(0, 0, 0, 0.5);
+            }
+            #drop-zone input[type="file"] {
+                display: none;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="stage">
+            <div class="toolbar">
+                <div class="pill">
+                    <button id="toggleModeBtn">Switch to Thumbnail Mode</button>
+                </div>
+                <div class="pill">
+                    <label for="audioMode">Audio:</label>
+                    <select id="audioMode">
+                        <option value="mute">Mute (always)</option>
+                        <option value="manual" selected>Manual unmute</option>
+                        <option value="unmute">Unmute (always)</option>
+                    </select>
+                </div>
+            </div>
+            <div id="drop-zone">
+                <p>Drag & Drop Thumbnail and/or Video Here</p>
+                <input
+                    type="file"
+                    id="file-input"
+                    accept="image/*,video/*"
+                    multiple
+                />
+            </div>
+            <img id="image" alt="Fullscreen Image" />
+            <video id="video" playsinline></video>
+            <div id="unmute-overlay">Click to Unmute</div>
+            <div class="hint" id="hint">
+                Press E to toggle edit mode · Press F to toggle fullscreen
+            </div>
+        </div>
+        <script>
+            // Constants for file paths and defaults
+            const THUMBNAIL_PATH = "image.jpg"; // image path
+            const VIDEO_PATH = "video.mp4"; // video path
+            const DEFAULT_MODE = "loop"; // "loop" | "thumbnail"
+            const DEFAULT_AUDIO_MODE = "manual"; // "mute" | "manual" | "unmute"
+            const image = document.getElementById("image");
+            const video = document.getElementById("video");
+            const unmuteOverlay = document.getElementById("unmute-overlay");
+            const toggleModeBtn = document.getElementById("toggleModeBtn");
+            const audioModeSelect = document.getElementById("audioMode");
+            const hint = document.getElementById("hint");
+            const toolbar = document.querySelector(".toolbar");
+            const dropZone = document.getElementById("drop-zone");
+            const fileInput = document.getElementById("file-input");
+            // State
+            let isFullscreen = false;
+            let mouseMovementTimeout;
+            let isEditMode = false;
+            let isLoopingVideoMode = DEFAULT_MODE === "loop";
+            let playCount = 0;
+            // Auto-play suppression after switching modes (avoid click-triggered mousemove)
+            let suppressAutoPlayUntil = 0; // timestamp in ms
+            // Audio state
+            let muteMode = DEFAULT_AUDIO_MODE; // "mute" | "manual" | "unmute"
+            let isManuallyUnmuted = false; // reset each playthrough
+            // Sources
+            image.src = THUMBNAIL_PATH;
+            video.src = VIDEO_PATH;
+            // Always rely on 'ended' for loop handling so we can reset per playthrough
+            video.loop = false;
+
+            function requestFullscreen(element) {
+                if (element.requestFullscreen) {
+                    element.requestFullscreen().catch((err) => {
+                        console.error("Fullscreen error:", err);
+                    });
+                } else if (element.webkitRequestFullscreen) {
+                    element.webkitRequestFullscreen();
+                } else if (element.msRequestFullscreen) {
+                    element.msRequestFullscreen();
+                }
+                isFullscreen = true;
+            }
+
+            function exitFullscreen() {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+                isFullscreen = false;
+            }
+
+            function toggleFullscreen() {
+                if (!isFullscreen) {
+                    requestFullscreen(document.body);
+                } else {
+                    exitFullscreen();
+                }
+            }
+
+            function toggleMode() {
+                isLoopingVideoMode = !isLoopingVideoMode;
+                updateToggleButtonText();
+                if (isLoopingVideoMode) {
+                    playVideo();
+                } else {
+                    resetToImage();
+                    // Prevent the click/mouse movement used to press the button from auto-starting the video
+                    suppressAutoPlayUntil = performance.now() + 600; // ~0.6s grace period
+                }
+            }
+
+            function updateToggleButtonText() {
+                toggleModeBtn.textContent = isLoopingVideoMode
+                    ? "Switch to Thumbnail Mode"
+                    : "Switch to Loop Mode";
+            }
+
+            function isVideoVisible() {
+                return video.style.display === "block";
+            }
+
+            // Centralized logic for audio + overlay based on mode and state
+            function syncAudioUI() {
+                if (muteMode === "mute") {
+                    video.muted = true;
+                } else if (muteMode === "unmute") {
+                    video.muted = false;
+                } else {
+                    // manual
+                    video.muted = !isManuallyUnmuted;
+                }
+                const shouldShowOverlay =
+                    muteMode === "manual" &&
+                    !isManuallyUnmuted &&
+                    !isEditMode &&
+                    isVideoVisible();
+                unmuteOverlay.style.display = shouldShowOverlay
+                    ? "block"
+                    : "none";
+            }
+
+            function playVideo() {
+                // Starting a new playthrough resets manual unmute
+                isManuallyUnmuted = false;
+                image.style.display = "none";
+                video.style.display = "block";
+                if (!isFullscreen) {
+                    requestFullscreen(document.body);
+                }
+                // Ensure audio/UI state is correct before playing
+                syncAudioUI();
+                video.currentTime = 0;
+                video
+                    .play()
+                    .then(() => console.log("Playing video"))
+                    .catch((e) => console.log("Autoplay prevented:", e));
+            }
+
+            function resetToImage() {
+                video.pause();
+                video.style.display = "none";
+                image.style.display = "block";
+                // Reset per-playthrough state and hide overlay
+                isManuallyUnmuted = false;
+                unmuteOverlay.style.display = "none";
+                // Keep video.muted coherent with current mode when we come back to video
+                syncAudioUI();
+            }
+
+            // Overlay click: manual unmute for this playthrough only
+            unmuteOverlay.addEventListener("click", () => {
+                isManuallyUnmuted = true;
+                syncAudioUI();
+            });
+
+            document.body.addEventListener("dblclick", toggleFullscreen);
+
+            video.addEventListener("ended", function () {
+                // One playthrough completed
+                playCount++;
+                // Reset manual unmute after each playthrough
+                isManuallyUnmuted = false;
+                if (isLoopingVideoMode) {
+                    // Start next loop with mode rules (will be muted again in manual/mute modes)
+                    playVideo();
+                } else {
+                    resetToImage();
+                }
+            });
+
+            document.addEventListener("fullscreenchange", () => {
+                isFullscreen = !!document.fullscreenElement;
+            });
+
+            document.addEventListener("webkitfullscreenchange", () => {
+                isFullscreen = !!document.webkitFullscreenElement;
+            });
+
+            document.addEventListener("msfullscreenchange", () => {
+                isFullscreen = !!document.msFullscreenElement;
+            });
+
+            document.addEventListener("mousemove", () => {
+                const now = performance.now();
+                if (now < suppressAutoPlayUntil) return;
+                // Auto-play only in Thumbnail mode, and only when the image is visible
+                if (!isLoopingVideoMode && image.style.display !== "none") {
+                    playVideo();
+                }
+                clearTimeout(mouseMovementTimeout);
+                mouseMovementTimeout = setTimeout(() => {
+                    // Optional: inactivity logic here
+                }, 1000);
+            });
+
+            image.onload = function () {
+                requestFullscreen(document.body);
+            };
+
+            video.load();
+
+            document.addEventListener("keydown", (e) => {
+                if (e.key === "e" || e.key === "E") {
+                    isEditMode = !isEditMode;
+                    updateEditModeUI();
+                    syncAudioUI();
+                }
+                if (e.key === "f" || e.key === "F") {
+                    toggleFullscreen();
+                }
+            });
+
+            // Toolbar: audio mode selector
+            audioModeSelect.value = muteMode;
+            audioModeSelect.addEventListener("change", () => {
+                muteMode = audioModeSelect.value; // "mute" | "manual" | "unmute"
+                // Apply immediately when switching modes mid-play
+                syncAudioUI();
+            });
+
+            // Wire up the toggle button (prevents click-triggered mousemove autoplay)
+            toggleModeBtn.addEventListener("click", () => {
+                suppressAutoPlayUntil = performance.now() + 600;
+                toggleMode();
+            });
+
+            // Drag-and-drop logic
+            dropZone.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                dropZone.classList.add("highlight");
+            });
+
+            dropZone.addEventListener("dragleave", () => {
+                dropZone.classList.remove("highlight");
+            });
+
+            dropZone.addEventListener("drop", (e) => {
+                e.preventDefault();
+                dropZone.classList.remove("highlight");
+                if (e.dataTransfer.files.length) {
+                    handleFiles(e.dataTransfer.files);
+                }
+            });
+
+            dropZone.addEventListener("click", () => fileInput.click());
+
+            fileInput.addEventListener("change", () =>
+                handleFiles(fileInput.files),
+            );
+
+            function handleFiles(files) {
+                if (!files.length) return;
+
+                let videoUploaded = false;
+
+                for (const file of files) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        if (file.type.startsWith("image/")) {
+                            image.src = e.target.result;
+                        } else if (file.type.startsWith("video/")) {
+                            video.src = e.target.result;
+                            video.load();
+                            videoUploaded = true;
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                }
+
+                // After a brief delay (to allow src to update), play the video if in loop mode
+                setTimeout(() => {
+                    if (videoUploaded && isLoopingVideoMode) {
+                        playVideo();
+                    }
+                }, 100);
+            }
+
+            function updateEditModeUI() {
+                dropZone.style.display = isEditMode ? "flex" : "none";
+                toolbar.style.display = isEditMode ? "flex" : "none";
+                hint.style.display = isEditMode ? "block" : "none";
+            }
+
+            // Initialize
+            updateToggleButtonText();
+            updateEditModeUI();
+            if (isLoopingVideoMode) {
+                playVideo();
+            } else {
+                resetToImage();
+            }
+        </script>
+    </body>
+</html>
