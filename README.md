@@ -30,6 +30,8 @@ const DEFAULT_MODE = "loop";				// "loop" | "thumbnail"
 const DEFAULT_AUDIO_MODE = "manual";		// "mute" | "manual" | "unmute"
 ```
 
+Alternatively the thumbnail image and video can be loaded via Drag&Drop in the Edit mode. **Note:** File-URLs will not be stored in Local- or SessionStorage and discarded on reload.
+
 ## Controls
 
 - Keyboard:
@@ -71,4 +73,4 @@ const DEFAULT_AUDIO_MODE = "manual";		// "mute" | "manual" | "unmute"
 
 ## File Structure
 
-- `index.html` — self-contained app (HTML/CSS/JS). Place your media next to it or update the paths in the constants.
+- `videoplayer.html` — self-contained app (HTML/CSS/JS). Place your media next to it or update the paths in the constants.
