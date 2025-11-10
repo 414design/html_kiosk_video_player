@@ -1,4 +1,4 @@
-# Kiosk Video Player
+# HTML Kiosk Video Player
 
 A single-file, browser-based kiosk video player with two modes: Loop and Thumbnail and configurable audio options. Designed for gallery/installations and unattended displays.
 
